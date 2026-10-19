@@ -73,10 +73,35 @@ def surface(h,t,color,name,opacity,wave=0,phase=0):
  x,y,z=rotate(x,y,z,t)
  return go.Surface(x=x,y=y,z=z,colorscale=[[0,color],[1,color]],opacity=opacity,showscale=False,name=name,hoverinfo='name')
 
+def liquid_volume_wall(top,base,t,opacity):
+ # Closed outer liquid boundary between powder bed and liquid free surface.
+ aa=np.linspace(0,2*np.pi,140); frac=np.linspace(0,1,34); A,F=np.meshgrid(aa,frac)
+ x=R*.982*np.cos(A); y=R*.982*np.sin(A)
+ ia=np.mod((A/(2*np.pi)*NA).astype(int),NA); ir=np.full_like(ia,NR-1)
+ z0=base[ir,ia]; z1=np.maximum(z0,top[ir,ia]); z=z0+F*(z1-z0)
+ x,y,z=rotate(x,y,z,t)
+ return go.Surface(x=x,y=y,z=z,colorscale=[[0,'rgb(0,82,190)'],[1,'rgb(58,184,246)']],opacity=max(.20,opacity),showscale=False,name='Full liquid volume',hoverinfo='skip')
+
+def annular_ring(z,t,r_outer,r_inner,color,name):
+ aa=np.linspace(0,2*np.pi,120); rr=np.array([r_inner,r_outer]); RR,AA=np.meshgrid(rr,aa)
+ x=RR*np.cos(AA); y=RR*np.sin(AA); zz=np.full_like(x,z); x,y,zz=rotate(x,y,zz,t)
+ return go.Surface(x=x,y=y,z=zz,colorscale=[[0,color],[1,color]],opacity=.75,showscale=False,name=name,hoverinfo='name')
+
 def shell(t):
- aa=np.linspace(0,2*np.pi,90); zz=np.linspace(0,H,24); A,Z=np.meshgrid(aa,zz)
+ parts=[]
+ aa=np.linspace(0,2*np.pi,110); zz=np.linspace(0,H,28); A,Z=np.meshgrid(aa,zz)
  x=R*np.cos(A); y=R*np.sin(A); x,y,z=rotate(x,y,Z,t)
- return go.Surface(x=x,y=y,z=z,colorscale=[[0,'rgb(150,160,168)'],[1,'rgb(230,235,238)']],opacity=.17,showscale=False,name='SS shell',hoverinfo='skip')
+ parts.append(go.Surface(x=x,y=y,z=z,colorscale=[[0,'rgb(145,155,162)'],[1,'rgb(229,234,237)']],opacity=.16,showscale=False,name='PFD shell ID350',hoverinfo='skip'))
+ # Shallow dished top closure matching the GA vessel profile.
+ rr=np.linspace(0,R,28); aa2=np.linspace(0,2*np.pi,110); RR,A2=np.meshgrid(rr,aa2)
+ xh=RR*np.cos(A2); yh=RR*np.sin(A2); zh=H+105*(1-(RR/R)**2)
+ xh,yh,zh=rotate(xh,yh,zh,t)
+ parts.append(go.Surface(x=xh,y=yh,z=zh,colorscale=[[0,'rgb(175,183,188)'],[1,'rgb(236,239,241)']],opacity=.20,showscale=False,name='Dished top head',hoverinfo='skip'))
+ parts.append(annular_ring(H,t,R*1.08,R*.91,'rgb(165,174,180)','Main top flange'))
+ parts.append(annular_ring(0,t,R*1.09,0,'rgb(135,145,151)','20 micron filter plate'))
+ # Lower clamp/filter-head rim.
+ parts.append(annular_ring(-18,t,R*1.12,R*.84,'rgb(115,126,133)','Filter-head clamp'))
+ return parts
 
 def ln(x,y,z,t,name,show=True,w=10):
  x,y,z=rotate(x,y,z,t)
@@ -84,12 +109,19 @@ def ln(x,y,z,t,name,show=True,w=10):
 
 def traces(liq,pow_l,t,sd,lift,aor,trans,rpm,time,wave=0,dem_mu=.45,dem_e=.25,dem_drag=.65,particle_mm=1.0,particle_count=900):
  ph,_=powder_bed(pow_l,t,aor); lh,disp=solve_liquid(liq,ph,t,sd,lift)
- out=[shell(t),surface(ph,t,'rgb(210,163,36)','Powder bed',.92),surface(lh,t,'rgb(35,165,245)','Liquid free surface',max(.28,1-trans/100),abs(wave),0 if wave>=0 else math.pi)]
- out.append(ln([0,0],[0,0],[lift,H+160+lift],t,'Agitator shaft'))
+ alpha=max(.22,1-trans/100)
+ out=[]
+ if show_shell: out.extend(shell(t))
+ if show_powder_surface: out.append(surface(ph,t,'rgb(210,163,36)','Powder bed',.92))
+ if show_liquid_volume:
+  out.append(liquid_volume_wall(lh,ph,t,alpha*.72))
+  out.append(surface(lh,t,'rgb(35,165,245)','Liquid free surface',max(.32,alpha),abs(wave),0 if wave>=0 else math.pi))
+ if show_agitator: out.append(ln([0,0],[0,0],[lift,H+160+lift],t,'Agitator shaft'))
  rot=rpm*2*math.pi/60*time; c,s=math.cos(rot),math.sin(rot)
- for side in (-1,1):
-  x=np.array([0,side*(R-3),side*(R-3),side*38]); y=np.zeros(4); z=np.array([lift+H*.72,lift+H*.72,lift+8,lift+8])
-  out.append(ln(x*c-y*s,x*s+y*c,z,t,'Rotating anchor' if side==1 else '',side==1,12))
+ if show_agitator:
+  for side in (-1,1):
+   x=np.array([0,side*(R-3),side*(R-3),side*38]); y=np.zeros(4); z=np.array([lift+H*.72,lift+H*.72,lift+8,lift+8])
+   out.append(ln(x*c-y*s,x*s+y*c,z,t,'Rotating anchor' if side==1 else '',side==1,12))
  # DEM-style representative particles: gravity, wall confinement, frictional slip,
  # agitator drag, centrifugal migration, collision jitter and repose-angle avalanching.
  n=int(np.clip(particle_count,150,3000)); idx=np.arange(n); q=(idx+.5)/n
@@ -117,7 +149,8 @@ def traces(liq,pow_l,t,sd,lift,aor,trans,rpm,time,wave=0,dem_mu=.45,dem_e=.25,de
  zp=np.clip(zp,particle_mm*.5,np.maximum(particle_mm*.5,bed-particle_mm*.35))
  xp,yp,zp=rotate(xp,yp,zp,t)
  marker_size=float(np.clip(1.3+particle_mm*.75,1.5,6.0))
- out.append(go.Scatter3d(x=xp,y=yp,z=zp,mode='markers',marker=dict(size=marker_size,color='#e2ab1e',opacity=.84),name='DEM-style powder particles',hovertemplate='Representative particle<extra></extra>'))
+ if show_particles:
+  out.append(go.Scatter3d(x=xp,y=yp,z=zp,mode='markers',marker=dict(size=marker_size,color='#e2ab1e',opacity=.84),name='DEM-style powder particles',hovertemplate='Representative particle<extra></extra>'))
  return out,ph,lh,disp
 
 with st.sidebar:
@@ -143,14 +176,25 @@ with st.sidebar:
  zeta=st.slider('Slosh damping ratio',.01,.50,.10,.01)
  gain=st.slider('Inertia coupling',0.0,2.0,1.0,.05)
  settle=st.slider('Settling duration (s)',0.0,15.0,6.0,.5)
+ st.header('Display / equipment visibility')
+ show_liquid_volume=st.checkbox('Show full liquid volume',True)
+ show_powder_surface=st.checkbox('Show powder bed surface',True)
+ show_particles=st.checkbox('Show DEM-style powder particles',True)
+ show_shell=st.checkbox('Show ANFD shell and filter head',True)
+ show_agitator=st.checkbox('Show shaft and anchor agitator',True)
+ show_supports=st.checkbox('Show external support legs',False)
+ show_trunnions=st.checkbox('Show trunnion axis',True)
+ show_axes=st.checkbox('Show plot axes and grid',False)
 
 pow_l=pm/bd; th=math.radians(target); final,ph,lh,disp=traces(liq,pow_l,th,sd,lift,aor,trans,rpm,duration,0,dem_mu,dem_e,dem_drag,particle_mm,particle_count)
 metrics=st.columns(6)
 vals=[f'{liq:.2f} L',f'{pow_l:.2f} L',f'{np.max(lh):.1f} mm',f'{np.min(lh):.1f} mm',f'{np.max(ph):.1f} mm',f'{disp:.2f} L']
 for c,l,v in zip(metrics,['Liquid','Powder bulk volume','Liquid low side','Liquid high side','Powder low side','Immersed agitator displacement'],vals): c.metric(l,v)
 fig=go.Figure(final)
-for x,y in [(-550,-550),(-550,550),(550,-550),(550,550)]: fig.add_trace(go.Scatter3d(x=[x,x*.55],y=[y,y*.55],z=[-650,120],mode='lines',line=dict(color='#77838a',width=16),showlegend=False))
-fig.add_trace(go.Scatter3d(x=[-350,350],y=[0,0],z=[PIVOT,PIVOT],mode='lines+markers',line=dict(color='#89949a',width=14),marker=dict(size=7),name='Trunnions'))
+if show_supports:
+ for x,y in [(-550,-550),(-550,550),(550,-550),(550,550)]: fig.add_trace(go.Scatter3d(x=[x,x*.55],y=[y,y*.55],z=[-650,120],mode='lines',line=dict(color='#77838a',width=16),showlegend=False,name='External supports'))
+if show_trunnions:
+ fig.add_trace(go.Scatter3d(x=[-350,350],y=[0,0],z=[PIVOT,PIVOT],mode='lines+markers',line=dict(color='#89949a',width=14),marker=dict(size=7),name='Trunnion axis'))
 tm,ang,q,om=slosh_response(liq,th,duration,zeta,gain); dt=tm[1]-tm[0]; ns=max(1,int(settle/dt)); ts=np.arange(1,ns+1)*dt
 wd=om*math.sqrt(max(1e-9,1-zeta**2)); v0=(q[-1]-q[-2])/dt; qs=np.exp(-zeta*om*ts)*(q[-1]*np.cos(wd*ts)+(v0+zeta*om*q[-1])/wd*np.sin(wd*ts))
 times=np.r_[tm,duration+ts]; angles=np.r_[ang,np.full(ns,th)]; modes=np.r_[q,qs]
@@ -161,11 +205,22 @@ for i,(T,A,Q) in enumerate(zip(times,angles,modes)):
  frames.append(go.Frame(data=mv,name=str(i),traces=list(range(len(mv)))))
  history.append(dict(Time_s=float(T),Tilt_deg=math.degrees(float(A)),Liquid_low_mm=float(np.max(lh_i)),Liquid_high_mm=float(np.min(lh_i)),Powder_low_mm=float(np.max(ph_i)),Powder_high_mm=float(np.min(ph_i)),Agitator_displacement_L=float(disp_i),Slosh_modal_mm=float(Q)))
 fig.frames=frames
-fig.update_layout(height=780,margin=dict(l=0,r=0,t=42,b=0),scene=dict(aspectmode='data',xaxis_title='X mm',yaxis_title='Y mm',zaxis_title='Z mm',camera=dict(eye=dict(x=1.55,y=1.65,z=1.25))),legend=dict(orientation='h'),updatemenus=[dict(type='buttons',x=.02,y=1.08,buttons=[dict(label='▶ Animate tilt + agitation',method='animate',args=[None,dict(frame=dict(duration=90,redraw=True),transition=dict(duration=25),fromcurrent=True)]),dict(label='❚❚ Pause',method='animate',args=[[None],dict(frame=dict(duration=0),mode='immediate')])])],sliders=[dict(active=len(frames)-1,currentvalue=dict(prefix='Time: '),steps=[dict(label=f'{times[i]:.1f}s',method='animate',args=[[str(i)],dict(mode='immediate',frame=dict(duration=0,redraw=True))]) for i in range(len(frames))])])
+fig.update_layout(height=780,margin=dict(l=0,r=0,t=42,b=0),scene=dict(aspectmode='data',xaxis=dict(title='X mm',visible=show_axes,showgrid=show_axes),yaxis=dict(title='Y mm',visible=show_axes,showgrid=show_axes),zaxis=dict(title='Z mm',visible=show_axes,showgrid=show_axes),camera=dict(eye=dict(x=1.55,y=1.65,z=1.25)),bgcolor='rgb(246,248,250)'),legend=dict(orientation='h'),updatemenus=[dict(type='buttons',x=.02,y=1.08,buttons=[dict(label='▶ Animate tilt + agitation',method='animate',args=[None,dict(frame=dict(duration=90,redraw=True),transition=dict(duration=25),fromcurrent=True)]),dict(label='❚❚ Pause',method='animate',args=[[None],dict(frame=dict(duration=0),mode='immediate')])])],sliders=[dict(active=len(frames)-1,currentvalue=dict(prefix='Time: '),steps=[dict(label=f'{times[i]:.1f}s',method='animate',args=[[str(i)],dict(mode='immediate',frame=dict(duration=0,redraw=True))]) for i in range(len(frames))])])
 st.plotly_chart(fig,use_container_width=True)
 
 st.subheader('Liquid and powder level histories')
-hist=pd.DataFrame(history)
+# Defensive construction: Streamlit reruns the script on every widget change.
+# Rebuild the history if an older cached deployment omitted the list initialization.
+if 'history' not in locals() or not history:
+ history=[]
+ for T,A,Q in zip(times,angles,modes):
+  _,ph_i,lh_i,disp_i=traces(liq,pow_l,float(A),sd,lift,aor,trans,rpm,float(T),float(np.clip(Q,-R*.3,R*.3)),dem_mu,dem_e,dem_drag,particle_mm,particle_count)
+  history.append(dict(Time_s=float(T),Tilt_deg=math.degrees(float(A)),Liquid_low_mm=float(np.max(lh_i)),Liquid_high_mm=float(np.min(lh_i)),Powder_low_mm=float(np.max(ph_i)),Powder_high_mm=float(np.min(ph_i)),Agitator_displacement_L=float(disp_i),Slosh_modal_mm=float(Q)))
+HISTORY_COLUMNS=['Time_s','Tilt_deg','Liquid_low_mm','Liquid_high_mm','Powder_low_mm','Powder_high_mm','Agitator_displacement_L','Slosh_modal_mm']
+hist=pd.DataFrame.from_records(history,columns=HISTORY_COLUMNS)
+if hist.empty:
+ st.error('No simulation history was generated. Increase tilt duration or settling duration and rerun.')
+ st.stop()
 level_fig=go.Figure()
 level_fig.add_trace(go.Scatter(x=hist.Time_s,y=hist.Liquid_low_mm,name='Liquid low side',line=dict(color='#0b84f3',width=3)))
 level_fig.add_trace(go.Scatter(x=hist.Time_s,y=hist.Liquid_high_mm,name='Liquid high side',line=dict(color='#59c6ff',width=3,dash='dash')))
@@ -188,6 +243,13 @@ with c2:
 
 st.download_button('Download simulation history CSV',hist.to_csv(index=False).encode('utf-8'),'OMCA_ANFD_level_history.csv','text/csv')
 st.subheader('Coupled calculation basis')
-st.markdown('- Powder bulk volume is mass divided by bulk density. Powder slope is limited by angle of repose.\n- Liquid level is solved after subtracting immersed shaft and anchor-frame displacement above the powder bed.\n- Raising the agitator reduces immersed solid volume and changes liquid level.\n- The anchor rotates at entered RPM. DEM-style representative particles respond to tangential drag, centrifugal migration, wall confinement, friction, restitution and repose-angle avalanching.\n- Liquid inertia uses a damped first lateral slosh mode and continues after tilt stops.')
+st.markdown('''
+- Powder bulk volume is mass divided by bulk density. Powder slope is limited by angle of repose.
+- Full liquid volume is rendered with a closed outer boundary between the powder bed and the gravity-horizontal free surface.
+- Liquid level is solved after subtracting immersed shaft and anchor-frame displacement above the powder bed.
+- Raising the agitator reduces immersed solid volume and changes liquid level.
+- The anchor rotates at entered RPM. DEM-style representative particles respond to tangential drag, centrifugal migration, wall confinement, friction, restitution and repose-angle avalanching.
+- Liquid inertia uses a damped first lateral slosh mode and continues after tilt stops.
+''')
 st.warning('The powder engine is DEM-style, not a validated discrete-element solver. It uses representative particles and reduced-order contact/drag rules. Quantitative design or scale-up requires calibrated DEM such as Altair EDEM, Ansys Rocky, or LIGGGHTS; exact liquid breakup requires CFD/VOF.')
 with open(Path(__file__).with_name('OMCA_ANFD_GA_Model_All_Nozzles_Supports.glb'),'rb') as f: st.download_button('Download GA-based GLB model',f,file_name='OMCA_ANFD_GA_Model_All_Nozzles_Supports.glb')
