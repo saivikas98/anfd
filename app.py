@@ -199,27 +199,25 @@ tm,ang,q,om=slosh_response(liq,th,duration,zeta,gain); dt=tm[1]-tm[0]; ns=max(1,
 wd=om*math.sqrt(max(1e-9,1-zeta**2)); v0=(q[-1]-q[-2])/dt; qs=np.exp(-zeta*om*ts)*(q[-1]*np.cos(wd*ts)+(v0+zeta*om*q[-1])/wd*np.sin(wd*ts))
 times=np.r_[tm,duration+ts]; angles=np.r_[ang,np.full(ns,th)]; modes=np.r_[q,qs]
 frames=[]
-history=[]
+records=[]
 for i,(T,A,Q) in enumerate(zip(times,angles,modes)):
  mv,ph_i,lh_i,disp_i=traces(liq,pow_l,float(A),sd,lift,aor,trans,rpm,float(T),float(np.clip(Q,-R*.3,R*.3)),dem_mu,dem_e,dem_drag,particle_mm,particle_count)
  frames.append(go.Frame(data=mv,name=str(i),traces=list(range(len(mv)))))
- history.append(dict(Time_s=float(T),Tilt_deg=math.degrees(float(A)),Liquid_low_mm=float(np.max(lh_i)),Liquid_high_mm=float(np.min(lh_i)),Powder_low_mm=float(np.max(ph_i)),Powder_high_mm=float(np.min(ph_i)),Agitator_displacement_L=float(disp_i),Slosh_modal_mm=float(Q)))
+ records.append({
+  'Time_s':float(T),'Tilt_deg':math.degrees(float(A)),
+  'Liquid_low_mm':float(np.max(lh_i)),'Liquid_high_mm':float(np.min(lh_i)),
+  'Powder_low_mm':float(np.max(ph_i)),'Powder_high_mm':float(np.min(ph_i)),
+  'Agitator_displacement_L':float(disp_i),'Slosh_modal_mm':float(Q)
+ })
 fig.frames=frames
 fig.update_layout(height=780,margin=dict(l=0,r=0,t=42,b=0),scene=dict(aspectmode='data',xaxis=dict(title='X mm',visible=show_axes,showgrid=show_axes),yaxis=dict(title='Y mm',visible=show_axes,showgrid=show_axes),zaxis=dict(title='Z mm',visible=show_axes,showgrid=show_axes),camera=dict(eye=dict(x=1.55,y=1.65,z=1.25)),bgcolor='rgb(246,248,250)'),legend=dict(orientation='h'),updatemenus=[dict(type='buttons',x=.02,y=1.08,buttons=[dict(label='▶ Animate tilt + agitation',method='animate',args=[None,dict(frame=dict(duration=90,redraw=True),transition=dict(duration=25),fromcurrent=True)]),dict(label='❚❚ Pause',method='animate',args=[[None],dict(frame=dict(duration=0),mode='immediate')])])],sliders=[dict(active=len(frames)-1,currentvalue=dict(prefix='Time: '),steps=[dict(label=f'{times[i]:.1f}s',method='animate',args=[[str(i)],dict(mode='immediate',frame=dict(duration=0,redraw=True))]) for i in range(len(frames))])])
 st.plotly_chart(fig,use_container_width=True)
 
 st.subheader('Liquid and powder level histories')
-# Defensive construction: Streamlit reruns the script on every widget change.
-# Rebuild the history if an older cached deployment omitted the list initialization.
-if 'history' not in locals() or not history:
- history=[]
- for T,A,Q in zip(times,angles,modes):
-  _,ph_i,lh_i,disp_i=traces(liq,pow_l,float(A),sd,lift,aor,trans,rpm,float(T),float(np.clip(Q,-R*.3,R*.3)),dem_mu,dem_e,dem_drag,particle_mm,particle_count)
-  history.append(dict(Time_s=float(T),Tilt_deg=math.degrees(float(A)),Liquid_low_mm=float(np.max(lh_i)),Liquid_high_mm=float(np.min(lh_i)),Powder_low_mm=float(np.max(ph_i)),Powder_high_mm=float(np.min(ph_i)),Agitator_displacement_L=float(disp_i),Slosh_modal_mm=float(Q)))
 HISTORY_COLUMNS=['Time_s','Tilt_deg','Liquid_low_mm','Liquid_high_mm','Powder_low_mm','Powder_high_mm','Agitator_displacement_L','Slosh_modal_mm']
-hist=pd.DataFrame.from_records(history,columns=HISTORY_COLUMNS)
+hist=pd.DataFrame.from_records(records,columns=HISTORY_COLUMNS)
 if hist.empty:
- st.error('No simulation history was generated. Increase tilt duration or settling duration and rerun.')
+ st.error('No simulation records were generated. Check tilt and settling inputs.')
  st.stop()
 level_fig=go.Figure()
 level_fig.add_trace(go.Scatter(x=hist.Time_s,y=hist.Liquid_low_mm,name='Liquid low side',line=dict(color='#0b84f3',width=3)))
