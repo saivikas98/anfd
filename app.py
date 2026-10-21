@@ -5,7 +5,10 @@ import plotly.graph_objects as go
 import streamlit as st
 
 st.set_page_config(page_title='OMCA ANFD GA Digital Twin',layout='wide')
+APP_VERSION='GA-V3-2026-10-21'
+SS_POLISHED='rgb(213,219,222)'
 st.title('OMCA ANFD | GA-Shaped Multiphase Digital Twin')
+st.success(f'Loaded app version: {APP_VERSION}')
 st.caption('Vessel geometry rebuilt from the GA arrangement: flanged cylindrical body, dished heads, filter plate, trunnions, side gearbox/motor, nozzles and anchor agitator.')
 
 # GA/process basis, millimetres
@@ -73,16 +76,16 @@ def liquid_wall(top,base,t,opacity):
     return go.Surface(x=X,y=Y,z=Z,colorscale=[[0,'rgb(0,70,165)'],[1,'rgb(58,186,246)']],opacity=opacity,showscale=False,name='Full liquid volume',hoverinfo='skip')
 
 def equipment_traces(t,show):
-    out=[]; ss='rgb(166,174,179)'; polish='rgb(213,219,222)'; dark='rgb(70,78,83)'; blue='rgb(15,74,155)'
+    out=[]; ss='rgb(166,174,179)'; dark='rgb(70,78,83)'; blue='rgb(15,74,155)'
     # Actual ANFD silhouette: lower shallow filter head, straight shell, shallow dished top, flange rings.
     if show['shell']:
         profile=[(R*.72,-62),(R*.92,-38),(R,0),(R,H),(R*.96,H+38),(R*.75,H+76),(0,H+112)]
         out.append(surf_rev(profile,t,ss,'GA vessel shell',.28))
-        out += [ring(R*1.12,R*.88,0,t,polish,'Bottom filter-head flange'),ring(R*1.10,R*.88,H,t,polish,'Top body flange'),ring(R*1.02,0,8,t,dark,'Filter plate',.85)]
+        out += [ring(R*1.12,R*.88,0,t,SS_POLISHED,'Bottom filter-head flange'),ring(R*1.10,R*.88,H,t,SS_POLISHED,'Top body flange'),ring(R*1.02,0,8,t,dark,'Filter plate',.85)]
     # Side trunnions and bearing shells rotate with vessel.
     if show['trunnions']:
         for side in (-1,1):
-            out.append(line([side*R,side*(R+230)],[0,0],[P,P],t,'Trunnion' if side==1 else '',polish,16,side==1))
+            out.append(line([side*R,side*(R+230)],[0,0],[P,P],t,'Trunnion' if side==1 else '',SS_POLISHED,16,side==1))
             out.append(surf_rev([(55,P-60),(55,P+60)],t,dark,'Bearing housing',.9,48))
     # GA nozzles distributed around shell/head; represented as flanged necks.
     if show['nozzles']:
@@ -93,22 +96,21 @@ def equipment_traces(t,show):
     # Side gearbox and motor on drive axis (GA-style horizontal drive).
     if show['drive']:
         # simplified box/line envelope anchored to local -X side
-        out.append(line([-R-20,-R-250],[0,0],[P,P],t,'Drive coupling',polish,18))
+        out.append(line([-R-20,-R-250],[0,0],[P,P],t,'Drive coupling',SS_POLISHED,18))
         out.append(go.Scatter3d(x=[-R-330],y=[0],z=[P],mode='markers',marker=dict(size=38,color=blue,symbol='square'),name='Motor/gearbox'))
     return out
 
 def model(liq,powv,t,shaft,lift,aor,trans,rpm,time,show,dem,wave=0):
-    polish='rgb(213,219,222)'
     ph=powder_grid(powv,t,aor); lh,disp=liquid_grid(liq,ph,t,shaft,lift); out=equipment_traces(t,show)
     if show['powder']: out.append(field_surface(ph,t,'rgb(211,165,36)','Powder bed',.94))
     if show['liquid']:
         op=max(.22,1-trans/100); out += [liquid_wall(lh,ph,t,op*.76),field_surface(lh,t,'rgb(46,172,245)','Liquid surface',max(.34,op),wave)]
     rotang=rpm*2*np.pi*time/60
     if show['agitator']:
-        out.append(line([0,0],[0,0],[lift,H+140+lift],t,'Agitator shaft',polish,11))
+        out.append(line([0,0],[0,0],[lift,H+140+lift],t,'Agitator shaft',SS_POLISHED,11))
         c,s=math.cos(rotang),math.sin(rotang)
         for side in (-1,1):
-            x=np.array([0,side*(R-3),side*(R-3),side*38]); y=np.zeros(4); z=np.array([lift+.74*H,lift+.74*H,lift+8,lift+8]); out.append(line(x*c-y*s,x*s+y*c,z,t,'Anchor agitator' if side==1 else '',polish,13,side==1))
+            x=np.array([0,side*(R-3),side*(R-3),side*38]); y=np.zeros(4); z=np.array([lift+.74*H,lift+.74*H,lift+8,lift+8]); out.append(line(x*c-y*s,x*s+y*c,z,t,'Anchor agitator' if side==1 else '',SS_POLISHED,13,side==1))
     if show['particles']:
         n=dem['count']; idx=np.arange(n); q=(idx+.5)/n; rad=R*.94*np.sqrt(q); aa=idx*2.399963+rotang*dem['drag']*(.2+.8*q)
         drift=-math.copysign(1,t if t else 1)*min(1,max(0,abs(math.degrees(t))-aor)/18)*(1-dem['mu']*.5)*R*.28
