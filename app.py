@@ -98,6 +98,7 @@ def equipment_traces(t,show):
     return out
 
 def model(liq,powv,t,shaft,lift,aor,trans,rpm,time,show,dem,wave=0):
+    polish='rgb(213,219,222)'
     ph=powder_grid(powv,t,aor); lh,disp=liquid_grid(liq,ph,t,shaft,lift); out=equipment_traces(t,show)
     if show['powder']: out.append(field_surface(ph,t,'rgb(211,165,36)','Powder bed',.94))
     if show['liquid']:
